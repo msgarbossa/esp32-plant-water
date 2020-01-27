@@ -16,13 +16,13 @@ DIY plant watering system.
 I haven't gotten around to putting this in a case yet.  I recently replaced an Arduino with a clock module, which is no longer needed because of NTP and WiFi with the ESP32.
 ![esp32](/img/esp32-plant-water-1.jpg)
 
-The pump was one of the key components.  This one runs off of 9V and is submersible.  It's important to get a tight fitting to the tubing.  I wanted one that I could connect standard drip irrigation parts to.
+The pump was one of the key components.  This one is brushless, IP68 waterproof, runs off of 9V and is submersible ([link](https://www.amazon.com/Winkeyes-Submersible-Fountain-Electric-Brushless/dp/B07S8S8JR9)).  It's important to get a tight fitting to the tubing.  I wanted one that I could connect standard drip irrigation parts to.
 ![plumbing](/img/esp32-plant-water-2.jpg)
 
-The pump forms a loop with excess water getting returned to the reservoir.  The drips are pressure compensating, which is important to minimize the relatively higher pressure from the first drip in the loop compared to the later drips in the loop.  For plants requiring more water, I used 1 gph drips and 1/2 gph drips for less water.  
+The pump forms a loop with excess water getting returned to the reservoir.  The drips are pressure compensating ([link](https://www.amazon.com/Raindrip-PC2050B-Pressure-Compensating-Drippers/dp/B0044FUQ1A)), which is important to minimize the relatively higher pressure from the first drip in the loop compared to the later drips in the loop.  For plants requiring more water, I used 1 gph drips and 1/2 gph drips for less water.  
 ![pump](/img/esp32-plant-water-3.jpg)
 
-Although not shown, the power supply requires 2 different voltages.  Currently there are 2 power bricks, one USB for the ESP32 and one with 9V for the pump connected through the relay.  I'm planning to put a buck converter in parallel with the 9V pump to step down to 5V to feed the ESP32.
+Although not shown, the power supply requires 2 different voltages.  Currently there are 2 power bricks, one USB for the ESP32 and one with 12V for the pump connected through the relay.  I might try out a buck converter in parallel with the  pump to step down to 5V to feed the ESP32 and relay, but I've heard the buck converter generates more heat when stepping down more than a few volts.
 
 ## Platform IO
 
