@@ -43,7 +43,7 @@ unsigned long waterWaitMillis;
 // wifi credentials
 const char* ssid     = "<MYSSID>";
 const char* password = "<MYPASSWORD>";
-
+int NAcounts=0; // used to reset if there are connection issues
 
 // NTP client
 const char* ntpServer = "<NTPSERVER>";
@@ -56,15 +56,77 @@ time_t now;
 struct tm * timeinfo;
 
 // MQTT Network
-IPAddress broker(192,168,1,X); // IP address of your MQTT broker with commas
+IPAddress broker(192,168,1,X); // IP address of your MQTT broker eg. 192.168.1.50
 //const char *BROKER_USER = "-----"
 //const char *BROKER_PASS = "-----"
 const char *ID = "plantWater";  // Name of our device, must be unique
-const char *TOPIC = "home/greenhouse";  // topic to subscribe to
-const char *TOPIC_STATE = "home/greenhouse/state";  // topic to publish state to
-const char *TOPIC_JSON = "home/greenhouse/json";  // topic to publish state to
+const char *TOPIC_SUB = "home/greenhouse";  // topic to subscribe to
+const char *TOPIC_PUB_STATE = "home/greenhouse/state";  // topic to publish state to
+const char *TOPIC_PUB_JSON = "home/greenhouse/json";  // topic to publish state to
+//const char *TOPIC_TEMP = "home/garage1/temp";  // topic to publish temp to
 WiFiClient wclient;  // Setup wifi object
 PubSubClient client(wclient); // Setup MQTT client object
+
+// Reconnect to client
+void mqtt_reconnect() {
+  // Loop until we're reconnected
+  NAcounts = 0;
+  while (!client.connected() && NAcounts < 7) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    if(client.connect(ID)) {
+      client.subscribe(TOPIC_SUB);
+      Serial.println("connected");
+      Serial.print("Subcribed to: ");
+      Serial.println(TOPIC_SUB);
+      Serial.println('\n');
+
+    } else {
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+      NAcounts++;
+    }
+  }
+}
+
+// Connect to WiFi network
+void wifi_reconnect() {
+  btStop(); // turn off bluetooth
+  Serial.print("\nReconnecting to ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password); // Connect to network
+
+  while (WiFi.status() != WL_CONNECTED) { // Wait for connection
+    delay(1000);
+    Serial.print(".");
+  }
+
+  Serial.println();
+  Serial.println("WiFi connected");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void mqtt_publish(const char* topic, const char* msg) {
+  short int pubRetry = 0;
+  short int pubDone = 0;
+  while (!pubDone && pubRetry < 3) {
+    // Reconnect WiFi if connection is lost
+    if ((WiFi.status() != WL_CONNECTED)) {
+      Serial.println("publish: WiFi reconnect!");
+      wifi_reconnect();
+    }
+    if (!client.connected()) {
+      Serial.println("publish: MQTT reconnect!");
+      mqtt_reconnect();
+    }
+    Serial.println(String(msg));
+    pubDone = client.publish(topic, String(msg).c_str());
+    pubRetry++;
+  }
+}
 
 void blink_now() {
     digitalWrite(ledPin, HIGH);
@@ -75,7 +137,7 @@ void blink_now() {
 void doWater() {
   blink_now();
   Serial.println("toggle");
-  client.publish(TOPIC_STATE, "toggled");
+  mqtt_publish(TOPIC_PUB_STATE, "toggled");
   waterLastMillis = currentMillis;  //IMPORTANT to save the start time of the last watering.
   digitalWrite(relayPin, HIGH); // turn on the relay
   digitalWrite(ledPin, HIGH); // turn on the LED
@@ -89,7 +151,6 @@ void doTemp() {
 
   // Read temperature in Celcius
   float t = dht.readTemperature();
-  t = ((t * 9)/5) + 32;  // convert to fahrenheit
   // Read humidity
   float h = dht.readHumidity();
 
@@ -97,7 +158,10 @@ void doTemp() {
   if ( isnan(t) || isnan(h)) {
     Serial.println("[ERROR] Please check the DHT sensor !");
     //client.publish(TOPIC_TEMP, "[ERROR] Please check the DHT sensor !", true);
+    mqtt_publish(TOPIC_PUB_STATE, "[ERROR] Please check the DHT sensor !");
     return;
+  } else {
+    t = ((t * 9)/5) + 32;  // convert to fahrenheit
   }
 
   Serial.print("Temperature : ");
@@ -107,30 +171,25 @@ void doTemp() {
 
   String payload="{\"Humidity\":"+String(h)+ ",\"Temperature\":"+String(t)+"} ";
   payload.toCharArray(data, (payload.length() + 1));
-  client.publish(TOPIC_JSON, data);
-}
-
-// Connect to WiFi network
-void wifi_reconnect() {
-  btStop(); // turn off bluetooth
-  Serial.print("\nReconnecting to ");
-  Serial.println(ssid);
-
-  WiFi.begin(ssid, password); // Connect to network
-
-  while (WiFi.status() != WL_CONNECTED) { // Wait for connection
-    delay(5000);
-    Serial.print(".");
-  }
-
-  Serial.println();
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  //client.publish(TOPIC_PUB_JSON, data);
+  mqtt_publish(TOPIC_PUB_JSON, data);
 }
 
 void setup_wifi_ota() {
   btStop(); // turn off bluetooth
+
+  // Don't automatically handle WiFi reconnect
+  // https://github.com/esp8266/Arduino/issues/5527
+  // if (WiFi.SSID() != "") {
+  //   Serial.println("WiFi credentials set in flash, wiping them");
+  //   WiFi.disconnect();
+  // }
+  // if (WiFi.getAutoConnect()) {
+  //   Serial.println("Disabling auto-connect");
+  //   WiFi.setAutoConnect(false);
+  // }
+  // WiFi.persistent(false);
+
   Serial.print("\nConnecting to ");
   Serial.println(ssid);
   Serial.println("Booting");
@@ -174,26 +233,6 @@ void setup_wifi_ota() {
   Serial.println(WiFi.localIP());
 }
 
-// Reconnect to client
-void mqtt_reconnect() {
-  // Loop until we're reconnected
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Attempt to connect
-    if(client.connect(ID)) {
-      client.subscribe(TOPIC);
-      Serial.println("connected");
-      Serial.print("Subcribed to: ");
-      Serial.println(TOPIC);
-      Serial.println('\n');
-    } else {
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
-    }
-  }
-}
-
 void callback(char* topic, byte* payload, unsigned int length) {
   String response;
 
@@ -205,7 +244,21 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print(" ");
   Serial.println(response);
   if(response == "toggle") { // toggle the relay
+    Serial.println("toggle");
+    blink_now();
     doWater();
+    //client.publish(TOPIC_PUB_STATE, "toggled");
+    mqtt_publish(TOPIC_PUB_STATE, "toggled");
+  } else if(response == "ping") { // reply pong
+    Serial.println("ping received");
+    blink_now();
+    //client.publish(TOPIC_PUB_STATE, "pong");
+    mqtt_publish(TOPIC_PUB_STATE, "pong");
+  } else if (response == "reboot") { // reboot
+    Serial.println("Rebooting...");
+    mqtt_publish(TOPIC_PUB_STATE, "rebooting");
+    delay(1000);
+    ESP.restart();
   }
 }
 
@@ -230,7 +283,7 @@ void setup() {
   client.loop(); // returns true if still connected
 
   Serial.println("Setup complete");
-  client.publish(TOPIC_STATE, "online");
+  mqtt_publish(TOPIC_PUB_STATE, "online");
   blink_now();
 
   // convert seconds to milliseconds for calculations
